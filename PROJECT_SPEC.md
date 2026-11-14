@@ -30,8 +30,10 @@ result.
 - Persistence: JSON state plus content-addressed binary files below one data
   directory
 - Public boundary: HTTP/JSON
-- Input media: PCM WAV and planar YUV4MPEG2 in the `C420` family
-- Output media: PCM WAV and planar YUV4MPEG2 in the `C420` family
+- Input media: PCM WAV (signed 16-bit integer or 32-bit IEEE float) and planar
+  YUV4MPEG2 in the `C420` family
+- Output media: PCM WAV (signed 16-bit integer or 32-bit IEEE float) and planar
+  YUV4MPEG2 in the `C420` family
 
 ## Core entities
 
@@ -141,8 +143,10 @@ Entry point: `POST /v1/renditions`
 
 Steps:
 
-1. The HTTP boundary reads the plan and output filename.
-2. The plan compiler checks the primary media kind, secondary usage, and
+1. The HTTP boundary reads the plan, output filename, and optional
+   `audio_sample_format` delivery choice.
+2. The plan compiler checks the primary media kind, secondary usage, the
+   audio delivery representation when float sources are present, and
    operation-specific parameters.
 3. The repository persists a `queued` rendition.
 4. The application records `running` and reads parent media bytes.
@@ -172,7 +176,8 @@ Steps:
 
 1. The application loads a completed rendition and its provenance edge.
 2. The verifier loads both parent assets and the recorded output.
-3. The executor repeats the stored normalized plan.
+3. The executor repeats the stored normalized plan with the rendition's
+   persisted audio delivery representation.
 4. The verifier compares reproduced bytes and media descriptors with the
    recorded output.
 5. The repository persists the integrity result.
@@ -190,6 +195,36 @@ Failure:
   the persisted mismatch check.
 
 ## Supported media operations
+
+### Audio sample representations
+
+WAV audio is accepted and delivered in one of two representations:
+
+- `pcm_s16le`: signed 16-bit little-endian integer PCM.
+- `pcm_f32le`: 32-bit little-endian IEEE float PCM in full-scale units where
+  `1.0` is integer full scale.
+
+Float samples beyond `+/-1.0` are valid and retain their over-full-scale detail
+through the whole operation chain. Two deterministic processing interpretations
+coexist:
+
+- The legacy integer chain is selected when the rendition request omits
+  `audio_sample_format`. It operates on integer samples and rounds and clips
+  after each gain, normalization, and mix step. It only accepts integer
+  sources; a float source without an explicit choice fails with
+  `422 PLAN_INVALID`.
+- The full-scale float chain is selected when `audio_sample_format` is
+  `pcm_s16le` or `pcm_f32le`. Every source is decoded to full-scale float,
+  operations run without intermediate rounding or clipping, and the result is
+  quantized once when encoded (`pcm_s16le` applies the legacy rounding and
+  clipping rule at delivery; `pcm_f32le` writes float values verbatim).
+
+The chosen representation is validated at the boundary, joins the normalized
+plan digest, and is persisted on the rendition. Integrity replay uses the
+persisted representation, so both new float renditions and previously saved
+integer recipes reproduce their exact original bytes; the legacy chain's
+computation never changes. Float payloads containing non-finite samples are
+rejected at inspection with `415 UNSUPPORTED_MEDIA`.
 
 Audio plans:
 

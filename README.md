@@ -10,10 +10,12 @@ FFmpeg, network access, credentials, or an online database.
 
 ## What it does
 
-- Ingests one- or two-channel signed 16-bit PCM WAV.
+- Ingests one- or two-channel signed 16-bit PCM WAV and 32-bit IEEE float WAV.
 - Ingests planar 4:2:0 YUV4MPEG2 in the `C420` family.
 - Applies audio trim, gain, normalization, and two-source mixing.
 - Applies video trim, even-aligned crop, luma offset, and horizontal mirror.
+- Keeps over-full-scale float samples through gain, normalization, and mixing
+  until the explicitly chosen delivery format is encoded.
 - Persists immutable assets, rendition state, provenance edges, and integrity
   checks.
 - Replays the stored operation plan and compares both bytes and media
@@ -79,6 +81,46 @@ Content-Type: application/json
 
 Rendition creation is synchronous at the HTTP boundary. The durable transition
 history still records `queued`, `running`, and the terminal state.
+
+### Audio sample representations
+
+WAV inputs accept two representations, reported in the descriptor `codec`:
+
+- `pcm_s16le` — signed 16-bit integer PCM (the original format).
+- `pcm_f32le` — 32-bit IEEE float PCM, using full-scale units where `1.0`
+  corresponds to integer full scale. Float samples may exceed `+/-1.0`; those
+  over-full-scale values are preserved through gain, normalization, and
+  mixing instead of being clipped at ingest.
+
+When any source is 32-bit float, the rendition request must explicitly choose
+the delivery representation with the rendition-level `audio_sample_format`
+field:
+
+```json
+{
+  "primary_asset_id": "asset_...",
+  "output_name": "derived.wav",
+  "audio_sample_format": "pcm_f32le",
+  "operations": [
+    {"type": "audio_gain", "db": -6},
+    {"type": "audio_normalize", "target_peak": 0.5}
+  ]
+}
+```
+
+Allowed values are `pcm_s16le` and `pcm_f32le`. The actual encoded samples,
+the volume operations, and the output media descriptor always follow that one
+interpretation: a `pcm_f32le` delivery keeps float detail (including values
+above full scale) and never clips mid-chain, while a `pcm_s16le` delivery runs
+the same full-scale float chain and quantizes once, at encode time, with the
+documented rounding and clipping rule. Omitting the field selects the legacy
+integer chain, which rounds and clips after every step; float sources are
+rejected with `422 PLAN_INVALID` instead of being silently flattened.
+
+The choice is part of the normalized plan digest and is persisted on the
+rendition, so replaying a saved task regenerates the same bytes. Renditions
+saved before float support have no `audio_sample_format` and continue to use
+the unchanged legacy integer computation.
 
 Audio-only operations:
 
@@ -205,5 +247,5 @@ exercises the public endpoints, and shuts the server down.
 
 No environment variables are required. Runtime choices use `--host`, `--port`,
 and `--data-dir`. Incoming request bodies are limited to 36 MiB, decoded media
-payloads to 24 MiB, WAV geometry to one or two channels, and Y4M geometry to
-1920x1080 with at most 240 frames.
+payloads to 24 MiB, WAV geometry to one or two channels in signed 16-bit PCM or
+32-bit IEEE float, and Y4M geometry to 1920x1080 with at most 240 frames.

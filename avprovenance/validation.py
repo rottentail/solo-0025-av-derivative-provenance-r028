@@ -17,6 +17,27 @@ MAX_HTTP_BODY_BYTES = 36 * 1024 * 1024
 MAX_FILENAME_LENGTH = 140
 CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
+AUDIO_SAMPLE_FORMAT_S16 = "pcm_s16le"
+AUDIO_SAMPLE_FORMAT_F32 = "pcm_f32le"
+SUPPORTED_AUDIO_SAMPLE_FORMATS = (
+    AUDIO_SAMPLE_FORMAT_S16,
+    AUDIO_SAMPLE_FORMAT_F32,
+)
+
+
+def require_optional_audio_sample_format(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, str):
+        raise PlanInvalid("audio_sample_format must be a string.")
+    normalized = value.strip()
+    if normalized not in SUPPORTED_AUDIO_SAMPLE_FORMATS:
+        raise PlanInvalid(
+            "audio_sample_format is outside the allowed values.",
+            details={"allowed": list(SUPPORTED_AUDIO_SAMPLE_FORMATS)},
+        )
+    return normalized
+
 
 def require_object(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):

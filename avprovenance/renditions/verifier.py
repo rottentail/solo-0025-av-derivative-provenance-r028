@@ -28,6 +28,7 @@ def reproduce_output(
     primary_bytes: bytes,
     operations: list[dict[str, Any]],
     secondary_bytes: bytes | None,
+    output_sample_format: str | None = None,
 ) -> VerificationOutcome:
     expected_descriptor = output_asset.descriptor.to_dict()
     expected_digest = output_asset.sha256
@@ -47,6 +48,7 @@ def reproduce_output(
             primary_bytes,
             operations,
             secondary_bytes,
+            output_sample_format=output_sample_format,
         )
     except (MediaOperationFailure, UnsupportedMedia, RenderFailed) as exc:
         reason = getattr(exc, "code", "reproduction_failed")

@@ -95,6 +95,7 @@ class Rendition:
     error_message: str | None
     created_at: str
     updated_at: str
+    audio_sample_format: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -111,6 +112,7 @@ class Rendition:
             "error_message": self.error_message,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "audio_sample_format": self.audio_sample_format,
         }
 
     @classmethod
@@ -141,6 +143,11 @@ class Rendition:
             ),
             created_at=str(value["created_at"]),
             updated_at=str(value["updated_at"]),
+            audio_sample_format=(
+                str(value["audio_sample_format"])
+                if value.get("audio_sample_format") is not None
+                else None
+            ),
         )
 
     def transition_to(self, target: str) -> None:

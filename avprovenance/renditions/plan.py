@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ..errors import PlanInvalid
 from ..serialization import digest_json
 from ..validation import (
+    SUPPORTED_AUDIO_SAMPLE_FORMATS,
     require_integer,
     require_number,
     require_object,
@@ -23,6 +24,7 @@ class CompiledPlan:
     operations: list[dict[str, Any]]
     digest: str
     operation_types: list[str]
+    audio_sample_format: str | None
 
 
 def _only_keys(operation: dict[str, Any], allowed: set[str], name: str) -> None:
@@ -219,9 +221,20 @@ def compile_plan(
     raw_operations: Any,
     *,
     has_secondary: bool,
+    audio_sample_format: str | None = None,
 ) -> CompiledPlan:
     if media_kind not in {"audio", "video"}:
         raise PlanInvalid("The primary media kind is not supported.")
+    if audio_sample_format is not None:
+        if media_kind != "audio":
+            raise PlanInvalid(
+                "audio_sample_format only applies to audio renditions."
+            )
+        if audio_sample_format not in SUPPORTED_AUDIO_SAMPLE_FORMATS:
+            raise PlanInvalid(
+                "audio_sample_format is outside the allowed values.",
+                details={"allowed": list(SUPPORTED_AUDIO_SAMPLE_FORMATS)},
+            )
     if not isinstance(raw_operations, list) or not raw_operations:
         raise PlanInvalid("operations must be a non-empty array.")
     if len(raw_operations) > MAX_OPERATIONS:
@@ -257,13 +270,18 @@ def compile_plan(
     if media_kind == "video" and has_secondary:
         raise PlanInvalid("Video plans do not accept a secondary asset.")
 
+    digest_payload: dict[str, Any] = {
+        "media_kind": media_kind,
+        "operations": normalized,
+    }
+    # Only explicit float-capable plans carry the format; legacy recipes keep
+    # their original digest shape so stored recipes reproduce unchanged.
+    if audio_sample_format is not None:
+        digest_payload["audio_sample_format"] = audio_sample_format
+
     return CompiledPlan(
         operations=normalized,
-        digest=digest_json(
-            {
-                "media_kind": media_kind,
-                "operations": normalized,
-            }
-        ),
+        digest=digest_json(digest_payload),
         operation_types=[item["type"] for item in normalized],
+        audio_sample_format=audio_sample_format,
     )

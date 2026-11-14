@@ -12,9 +12,16 @@ def execute_plan(
     primary_bytes: bytes,
     operations: list[dict[str, Any]],
     secondary_bytes: bytes | None,
+    *,
+    output_sample_format: str | None = None,
 ) -> RenderOutcome:
     try:
-        return apply_media_operations(primary_bytes, operations, secondary_bytes)
+        return apply_media_operations(
+            primary_bytes,
+            operations,
+            secondary_bytes,
+            output_sample_format=output_sample_format,
+        )
     except MediaOperationFailure as exc:
         raise RenderFailed(
             "The rendition could not be produced.",

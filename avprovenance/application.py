@@ -36,6 +36,7 @@ from .storage import (
 )
 from .validation import (
     require_object,
+    require_optional_audio_sample_format,
     require_string,
     validate_filename,
 )
@@ -109,6 +110,9 @@ class MediaProvenanceApplication:
                 maximum=96,
             )
         output_name = validate_filename(request.get("output_name"))
+        audio_sample_format = require_optional_audio_sample_format(
+            request.get("audio_sample_format")
+        )
 
         primary = self.repository.get_asset(primary_asset_id)
         secondary = (
@@ -119,10 +123,28 @@ class MediaProvenanceApplication:
         if secondary is not None and secondary.kind != primary.kind:
             raise PlanInvalid("Primary and secondary assets must share one media kind.")
 
+        source_formats = [primary.descriptor.properties.get("codec")]
+        if secondary is not None:
+            source_formats.append(secondary.descriptor.properties.get("codec"))
+        if primary.kind == "audio":
+            if (
+                audio_sample_format is None
+                and "pcm_f32le" in source_formats
+            ):
+                raise PlanInvalid(
+                    "32-bit float audio sources require an explicit "
+                    "audio_sample_format delivery choice."
+                )
+        elif audio_sample_format is not None:
+            raise PlanInvalid(
+                "audio_sample_format only applies to audio renditions."
+            )
+
         plan = compile_plan(
             primary.kind,
             request.get("operations"),
             has_secondary=secondary is not None,
+            audio_sample_format=audio_sample_format,
         )
         if secondary is not None and "audio_mix" not in plan.operation_types:
             raise PlanInvalid(
@@ -148,6 +170,7 @@ class MediaProvenanceApplication:
             error_message=None,
             created_at=now,
             updated_at=now,
+            audio_sample_format=plan.audio_sample_format,
         )
         self.repository.create_rendition(rendition)
         self.repository.transition_rendition(rendition.id, "running")
@@ -159,6 +182,7 @@ class MediaProvenanceApplication:
                 primary_bytes,
                 plan.operations,
                 secondary_bytes,
+                output_sample_format=plan.audio_sample_format,
             )
             output_digest = sha256_hex(outcome.data)
             output_key = self.content_files.key_for_digest(output_digest)
@@ -330,6 +354,7 @@ class MediaProvenanceApplication:
             primary_bytes=primary_bytes,
             operations=deep_copy(rendition.operations),
             secondary_bytes=secondary_bytes,
+            output_sample_format=rendition.audio_sample_format,
         )
         finished = self.repository.settle_integrity_audit(
             audit.id,
